@@ -33,22 +33,30 @@ dense_layer = 64
 # torch.manual_seed(1337)
 
 # Read the data
-prices = pd.read_csv('Prices_Data/EURUSD.csv', index_col=0, parse_dates=True, encoding='utf-16', sep=';')
+prices = pd.read_csv('Prices_Data/EURUSD.csv', 
+                     index_col=0, 
+                     parse_dates=True, 
+                     encoding='utf-16', 
+                     sep=';')
 prices = pd.DataFrame(prices)
 # We just use the closing price
 prices = pd.DataFrame(prices['Close'])
 prices = prices.resample('1H').last()
 
-def preprare_data(prices, block_size, time_ahead_to_predict, price_diff_threshold):
-    # Calculate the logaritmic returns
+def preprare_data(prices,
+                  block_size,
+                  time_ahead_to_predict,
+                  price_diff_threshold):
+    # Calculate the logarithmic returns
     returns = np.log(prices) - np.log(prices.shift(1))
     # Drop the NaN values
     returns = returns.dropna()
     # Slice the data using pandas instead of a loop
     total_windows = pd.DataFrame()
     for i in range(0, block_size + time_ahead_to_predict):
-        total_windows = pd.concat([total_windows, returns.shift(-i)], ignore_index=True, axis=1)
-    # total_windows = pd.concat([returns.shift(-i) for i in range(0,block_size + minutes_ahead_to_predict)], axis=1).dropna()
+        total_windows = pd.concat([total_windows, 
+                                   returns.shift(-i)], 
+                                  ignore_index=True, axis=1)
     # Drop the NaN values
     total_windows = total_windows.dropna()
     # Calculate the mean and standard deviation for each window
@@ -62,9 +70,10 @@ def preprare_data(prices, block_size, time_ahead_to_predict, price_diff_threshol
     # Initialize an array for the new y_labels
     y_labels = np.zeros((y_values.shape[0], 3))
 
-    # Make the labels a 3 column vector
+    # Make the labels a 3-column vector
     y_labels[y_values > price_diff_threshold, 0] = 1  # Price goes up by x%
-    y_labels[(y_values <= price_diff_threshold) & (y_values >= -price_diff_threshold), 1] = 1  # Price stays the same +- x%
+    y_labels[(y_values <= price_diff_threshold) 
+                      & (y_values >= -price_diff_threshold), 1] = 1  # Price stays the same +- x%
     y_labels[y_values < -price_diff_threshold, 2] = 1  # Price goes down by x%
 
     # Scaler
@@ -102,10 +111,12 @@ def get_batch(split):
     
     return x, y
 
-@torch.no_grad() # when we're not doing back propagation is a good practice to use this decorator
+# when we're not doing back propagation, it is a good practice to use this decorator
+@torch.no_grad() 
 def estimate_loss():
     out = {}
-    model.eval() # we put it in evaluation mode (for dropout and batchnorm, usually)
+    # we put it in evaluation mode (for dropout and batchnorm, usually)
+    model.eval()
     for split in ['train', 'val']:
         losses = torch.zeros(eval_iters)
         for k in range(eval_iters):
@@ -118,7 +129,10 @@ def estimate_loss():
 
 class Time2Vector(nn.Module):
     """One head of self-attention """
-    def __init__(self, block_size=block_size, embeddings=embeddings, dropout=dropout):
+    def __init__(self, 
+                 block_size=block_size,
+                 embeddings=embeddings,
+                 dropout=dropout):
         super().__init__()
         self.linear = nn.Linear(block_size, block_size, bias=False)
         self.periodic = nn.Linear(block_size, block_size, bias=False)
@@ -126,19 +140,28 @@ class Time2Vector(nn.Module):
         self.dropout = nn.Dropout(dropout)
     
     def forward(self, x):
-        B,T = x.shape # B is the number of instances in the Barch; T is the number of prices (Tokens) we use as an input, defined by block_size
+        B,T = x.shape
+        # B is the number of instances in the Barch; 
+        # T is the number of prices (Tokens) we use as an input, defined by block_size
         time_linear=self.linear(x) # (B,T) 
         time_linear = time_linear.unsqueeze(-1) # (B,T,1)
-        time_periodic=torch.sin(self.periodic(x)) # (B,T) | Apply the periodic layer and then the sin function
+        # Apply the periodic layer and then the sin function
+        time_periodic=torch.sin(self.periodic(x)) # (B,T)
         time_periodic = time_periodic.unsqueeze(-1) # (B,T,1)
-        out = torch.cat([time_linear, time_periodic], dim=-1) # (B,T,2) Concatenate the two tensors in the last dimension
+        # (B,T,2) Concatenate the two tensors in the last dimension
+        out = torch.cat([time_linear, time_periodic], dim=-1)
         if embeddings>2:
             out = self.proj(out) # (B,T,2) @ (2,embeddings) -> (B,T,embeddings)
         return out
 
 class Head(nn.Module):
     """One head of self-attention """
-    def __init__(self, head_size, block_size=block_size, embeddings=embeddings, dense_layer=dense_layer, dropout=dropout):
+    def __init__(self, 
+                 head_size, 
+                 block_size=block_size, 
+                 embeddings=embeddings,
+                 dense_layer=dense_layer,
+                 dropout=dropout):
         super().__init__()
         self.key = nn.Linear(embeddings, head_size, bias=False)
         self.query = nn.Linear(embeddings, head_size, bias=False)
@@ -146,14 +169,17 @@ class Head(nn.Module):
         self.densek = nn.Linear(head_size, dense_layer, bias=False)
         self.denseq = nn.Linear(head_size, dense_layer, bias=False)
         self.densev = nn.Linear(head_size, dense_layer, bias=False)
-        self.register_buffer('tril', torch.tril(torch.ones(block_size * 2, block_size * 2)))
+        self.register_buffer('tril', 
+                             torch.tril(torch.ones(block_size * 2, block_size * 2)))
         self.dropout = nn.Dropout(dropout)
     
     def forward(self, x):
-        # The input x is a tensor of shape (B,T,embeddings), which is the output of the time2vector module
-        B, T, C = x.shape # B is the number of instances in the Barch;
-                          # T is the number of prices (Tokens) we use as an input, defined by block_size;
-                          # C = embeddings
+        # The input x is a tensor of shape (B,T,embeddings), 
+        # which is the output of the time2vector module
+        B, T, C = x.shape
+        # B is the number of instances in the Barch;
+        # T is the number of prices (Tokens) we use as an input, defined by block_size;
+        # C = embeddings
         # Apply the key and query layers, and then a dense layer for each of them
         k=self.key(x) # (B,T,embeddings) @ (embeddings,head_size) -> (B,T,head_size)
         k=self.densek(k) # (B,head_size) @ (head_size,dense_layer) -> (B,T,dense_layer)
@@ -162,24 +188,37 @@ class Head(nn.Module):
         
         # Compute the weights of the attention
         wei = q @ k.transpose(-2,-1) *C**-0.5 # (B,T,dense_layer) @ (B,dense_layer,T) -> (B,T,T)
-        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf')) # (B,T,T) | Mask the upper triangular part of the matrix
-        wei = F.softmax(wei, dim=-1) # (B,T,T) | Apply the softmax function to the last dimension to normalize the weights
+        # Mask the upper triangular part of the matrix
+        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf')) # (B,T,T)
+        #  Apply the softmax function to the last dimension to normalize the weights
+        # so thy represent the weights of the attention.
+        wei = F.softmax(wei, dim=-1) # (B,T,T)
                                      # so thy represent the weights of the attention
         # Apply dropout to the weights. This turns off (makes it 0) some of the weights randomly
         # It allows to avoid overfitting
         wei = self.dropout(wei) # (B,T,T)
 
         # perform the weighted aggregation of the values
-        v = self.value(x) # (B,T,head_size) | Apply the value layer
-        v = self.densev(v) # (B,T,dense_layer) | Apply the dense layer of the value
-        out = wei @ v # (B,T,T) @ (B,T,dense_layer) -> (B,T,dense_layer) | Multiply the weights by the values
+        # Apply the value layer.
+        v = self.value(x) # (B,T,head_size)
+        # Apply the dense layer of the value.
+        v = self.densev(v) # (B,T,dense_layer)
+        # Multiply the weights by the values.
+        out = wei @ v # (B,T,T) @ (B,T,dense_layer) -> (B,T,dense_layer)
         return out
     
 class MultiHeadAttention(nn.Module):
     """Multiple heads of self-attention in parallel"""
-    def __init__(self, head_size, n_head, block_size=block_size, embeddings=embeddings, dense_layer=dense_layer, dropout=dropout):
+    def __init__(self, 
+                 head_size, 
+                 n_head, 
+                 block_size=block_size, 
+                 embeddings=embeddings, 
+                 dense_layer=dense_layer, 
+                 dropout=dropout):
         # We use super() to call the __init__() method of the parent class nn.Module
-        # This is necessary because we are overriding the __init__() method of the parent class (nn.Module)
+        # This is necessary because we are overriding the __init__() method of the 
+        # parent class (nn.Module)
         super().__init__()
         # Initialize a list of heads, a projection layer, and a dropout layer
         self.heads = nn.ModuleList([Head(head_size, 
@@ -192,16 +231,21 @@ class MultiHeadAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
-        # Apply each head to the input x. Concatenate the outputs of the heads in the last dimension
+        # Apply each head to the input x
+        # Concatenate the outputs of the heads in the last dimension
         out = torch.cat([h(x) for h in self.heads], dim=-1) # (B,T,n_head*dense_layer)
-        # This dropout is applied to the output of the heads
-        # It allows to regularize the output of the heads
-        out = self.dropout(self.proj(out)) # (B,T,n_head*dense_layer) @ (n_head*dense_layer,embeddings) -> (B,T,embeddings)
+        # This dropout is applied to the output of the heads.
+        # It allows to regularize the output of the heads.
+        out = self.dropout(self.proj(out))
+        # (B,T,n_head*dense_layer) @ (n_head*dense_layer,embeddings) -> (B,T,embeddings)
         return out 
 
 class FeedForward(nn.Module):
     """ a simple layer followed by non-linearity """
-    def __init__(self, embeddings=embeddings, dense_layer=dense_layer, dropout=dropout):
+    def __init__(self,
+                 embeddings=embeddings,
+                 dense_layer=dense_layer,
+                 dropout=dropout):
         super().__init__() # We use super() to call the __init__() method of the parent class nn.Module
         # Define a sequential aplication of layers.
         # The first layer is a linear layer, followed by a ReLU activation function, 
@@ -216,8 +260,14 @@ class FeedForward(nn.Module):
         return self.net(x) # (B,T,embeddings)
     
 class Block(nn.Module):
-    """ A single block of the transformer. We will use several of these blocks in the model """
-    def __init__(self, block_size=block_size, n_head=n_head, embeddings=embeddings, dense_layer=dense_layer, dropout=dropout):
+    """ A single block of the transformer. 
+    We will use several of these blocks in the model """
+    def __init__(self, 
+                 block_size=block_size,
+                 n_head=n_head,
+                 embeddings=embeddings,
+                 dense_layer=dense_layer,
+                 dropout=dropout):
         # Store the parameters of the block
         self.block_size = block_size
         self.n_head = n_head
@@ -232,15 +282,24 @@ class Block(nn.Module):
         # It ensures that the size of the heads is a multiple of the number of heads
         head_size = block_size // n_head
         # Define the modules of the block based on the classes we defined above
-        self.ttv = Time2Vector(block_size=block_size, embeddings=embeddings, dropout=dropout) 
-        self.sa = MultiHeadAttention(head_size, n_head, block_size=block_size, embeddings=embeddings, dense_layer=dense_layer, dropout=dropout) 
-        self.ffwd = FeedForward(embeddings=embeddings, dense_layer=dense_layer, dropout=dropout)
+        self.ttv = Time2Vector(block_size=block_size, 
+                               embeddings=embeddings,
+                               dropout=dropout) 
+        self.sa = MultiHeadAttention(head_size, 
+                                     n_head,
+                                     block_size=block_size,
+                                     embeddings=embeddings,
+                                     dense_layer=dense_layer,
+                                     dropout=dropout) 
+        self.ffwd = FeedForward(embeddings=embeddings, 
+                                dense_layer=dense_layer,
+                                dropout=dropout)
         # Define two layer normalization layers
         self.ln1 = nn.LayerNorm(block_size * embeddings)
         self.ln2 = nn.LayerNorm(block_size * embeddings)
         
     def forward(self, x):
-        # Residual connection -> We simmply add the input to the output of the time2vector module
+        # Residual connection -> We simply add the input to the output of the time2vector module
         x = torch.add(x.unsqueeze(-1), self.ttv(x), alpha=1) # (B,T,1) + (B,T,embeddings) -> (B,T,embeddings)
         # 1st normalization layer -> We apply layer normalization to the output of the time2vector module
         x = self.ln1(x.reshape(-1, self.block_size * self.embeddings)).reshape(-1, self.block_size, self.embeddings)
@@ -256,7 +315,12 @@ class Block(nn.Module):
 class LSTM(nn.Module):
     def __init__(self, input_size=2, hidden_size=1, num_layers=1):
         super().__init__()
-        self.lstm = nn.LSTM(input_size=2, hidden_size=hidden_size, num_layers=num_layers, batch_first=True, dropout=dropout, bidirectional=False)
+        self.lstm = nn.LSTM(input_size=2, 
+                            hidden_size=hidden_size,
+                            num_layers=num_layers,
+                            batch_first=True,
+                            dropout=dropout,
+                            bidirectional=False)
     
     def forward(self, x):
         x, _ = self.lstm(x)
@@ -265,14 +329,24 @@ class LSTM(nn.Module):
 
 class Model(nn.Module):
     # Finally, this is the model that we will train, joining all the blocks together
-    def __init__(self,  block_size=block_size, n_head=n_head, n_layer=n_layer, embeddings=embeddings, dense_layer=dense_layer):
+    def __init__(self,
+                 block_size=block_size,
+                 n_head=n_head,
+                 n_layer=n_layer,
+                 embeddings=embeddings,
+                 dense_layer=dense_layer):
         # Initialize the parent class nn.Module
         super().__init__()
         # Define the blocks of the model
         # We use * to unpack the list of blocks
-        # This allows us to pass a list of blocks sequentially to the nn.Sequential module
+        # This allows us to pass a list of blocks sequentially to the 
+        # nn.Sequential module.
         # self.blocks = nn.Sequential(*[Block(block_size, n_head=n_head) for _ in range(n_layer)]) # (B,T,2)
-        self.block = Block(block_size=block_size, n_head=n_head, embeddings=embeddings, dense_layer=dense_layer, dropout=dropout)
+        self.block = Block(block_size=block_size,
+                           n_head=n_head,
+                           embeddings=embeddings,
+                           dense_layer=dense_layer,
+                           dropout=dropout)
         # Convolutions to get the desired output dimension
         self.conv1 = nn.Linear(embeddings,1) 
         self.conv2 = nn.Linear(block_size,3) # (B,T,1) @ (T,1) -> (B,T,1)
@@ -310,8 +384,12 @@ class T2V_LSTM_Model(nn.Module):
     def __init__(self, block_size=block_size, embeddings=2, dropout=0.2):
         # Initialize the parent class nn.Module
         super().__init__()
-        self.t2v = Time2Vector(block_size=block_size, embeddings=embeddings, dropout=dropout)
-        self.LSTM = LSTM(input_size=2, hidden_size=1, num_layers=1)
+        self.t2v = Time2Vector(block_size=block_size,
+                               embeddings=embeddings,
+                               dropout=dropout)
+        self.LSTM = LSTM(input_size=2, 
+                         hidden_size=1,
+                         num_layers=1)
         # Convolutions to get the desired output dimension
         self.conv1 = nn.Linear(block_size, 3)
     
