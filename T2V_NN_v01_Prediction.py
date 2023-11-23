@@ -43,7 +43,10 @@ def preprare_data(prices, block_size, time_ahead_to_predict):
     # Slice the data using pandas instead of a loop
     total_windows = pd.DataFrame()
     for i in range(0, block_size + time_ahead_to_predict):
-        total_windows = pd.concat([total_windows, returns.shift(-i)], ignore_index=True, axis=1)
+        total_windows = pd.concat([total_windows, 
+                                   returns.shift(-i)],
+                                  ignore_index=True,
+                                  axis=1)
     # total_windows = pd.concat([returns.shift(-i) for i in range(0,block_size + minutes_ahead_to_predict)], axis=1).dropna()
     # Drop the NaN values
     total_windows = total_windows.dropna()
@@ -94,15 +97,18 @@ def get_batch(split):
     else:
         x, y = x_test, y_test
     ix = torch.randint(len(y) - block_size, (batch_size,))
-    x = torch.stack([x[i] for i in ix]) #torch.stack -> concatenates a sequence of tensors along a new dimension
+    #torch.stack -> concatenates a sequence of tensors along a new dimension
+    x = torch.stack([x[i] for i in ix]) 
     y = torch.stack([y[i] for i in ix])
     
     return x, y
 
-@torch.no_grad() # when we're not doing back propagation is a good practice to use this decorator
+# When we're not doing back propagation is a good practice to use this decorator
+@torch.no_grad()
 def estimate_loss():
     out = {}
-    model.eval() # we put it in evaluation mode (for dropout and batchnorm, usually)
+    # Put it in evaluation mode (for dropout and batchnorm, usually)
+    model.eval()
     for split in ['train', 'val']:
         losses = torch.zeros(eval_iters)
         for k in range(eval_iters):
@@ -123,18 +129,24 @@ class Time2Vector(nn.Module):
         self.dropout = nn.Dropout(dropout)
     
     def forward(self, x):
-        B,T = x.shape # B is the number of instances in the Barch; T is the number of prices (Tokens) we use as an input, defined by block_size
+        B,T = x.shape
+        # B is the number of instances in the Barch; T is the number of prices (Tokens) we use as an input, defined by block_size
         time_linear=self.linear(x) # (B,T) 
         time_linear = time_linear.unsqueeze(-1) # (B,T,1)
-        time_periodic=torch.sin(self.periodic(x)) # (B,T) | Apply the periodic layer and then the sin function
+        # Apply the periodic layer and then the sin function.
+        time_periodic=torch.sin(self.periodic(x)) # (B,T)
         time_periodic = time_periodic.unsqueeze(-1) # (B,T,1)
-        out = torch.cat([time_linear, time_periodic], dim=-1) # (B,T,2) Concatenate the two tensors in the last dimension
+        # Concatenate the two tensors in the last dimension
+        out = torch.cat([time_linear, time_periodic], dim=-1) # (B,T,2)
         return out
 
 class LSTM(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers):
         super().__init__()
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout)
+        self.lstm = nn.LSTM(input_size,
+                            hidden_size,
+                            num_layers,
+                            batch_first=True,dropout=dropout)
     
     def forward(self, x):
         x, _ = self.lstm(x)
@@ -172,7 +184,11 @@ class T2V_LSTM_Model(nn.Module):
 
 
 # Read the data
-prices = pd.read_csv('Prices_Data/BTCUSDT.csv', index_col=0, parse_dates=True, encoding='utf-16', sep=';')
+prices = pd.read_csv('Prices_Data/BTCUSDT.csv', 
+                     index_col=0,
+                     parse_dates=True,
+                     encoding='utf-16',
+                     sep=';')
 prices = pd.DataFrame(prices)
 # We just use the closing price
 prices = pd.DataFrame(prices['Close'])
